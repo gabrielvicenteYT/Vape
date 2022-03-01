@@ -35,7 +35,7 @@
 #include <gl/GL.h>
 #include <gl/glu.h>
 
-void Exit(JNIEnv *env, jclass caller, jboolean s);
+void Exit(JNIEnv *env, jclass caller, jboolean state);
 
 void DCallback(JNIEnv *env, jclass caller);
 
@@ -99,11 +99,10 @@ jclass GetVanillaClass(JNIEnv *env, jclass caller, jstring string);
 
 jint GetMinorVersion(JNIEnv *env, jclass caller);
 
-void ResetSocketC(JNIEnv *env, jclass caller);
+void RecieveSocketContents(JNIEnv *env, jclass caller);
 
 jint MakeFont(JNIEnv *env, jclass caller, jint var1, jint var2, jstring var3);
 
-// null params disable the status
 void UpdateDiscord(JNIEnv *env, jclass caller, jstring title, jstring subtitle);
 
 jint DrawStringV2(JNIEnv *env, jclass caller, jint size, jstring string, jdouble x, jdouble y, jint color, jfloat f);

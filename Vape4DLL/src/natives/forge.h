@@ -27,10 +27,43 @@
 
 #include "java.h"
 
-void SetupEventShit(PJVM_CTX ctx);
+#include <map>
 
-void DefineRegisterNative();
+typedef struct FORGE_CTX
+{
 
-void UnregisterEventSubscriptions();
+    JNIEnv *env;
+    std::map<char *, int> listeners;
+
+    jclass clsEvent;
+    jclass clsListenerList;
+    jclass clsEventPriority;
+    jclass clsListenerListInstance;
+
+    jmethodID midGetListenerList;
+    jmethodID midRegister;
+    jmethodID midUnregister;
+    jmethodID midUnregisterAll;
+    jmethodID midSetCancelled; // investigate usage.
+    jmethodID midBuildCache;   // investiage usage.
+
+    jfieldID fidEventPriority;
+    jfieldID fidLists;    // investigate usage.
+    jfieldID fidAllLists; // investigate usage.
+
+    jclass clsVapeListener;
+    jmethodID midVapeCall;
+    jobject objVapeListener;
+
+    jclass *listenerInstances;
+} * PFORGE_CTX;
+
+void SetupForge(PFORGE_CTX forge_ctx, PCLIENT_CTX client_ctx);
+
+jobject DefineForgeEventListener(PFORGE_CTX forge_ctx, jobject objClassLoader, void *unk1);
+
+void UnregisterForge(PFORGE_CTX forge_ctx);
+
+int GetForgeMinorVersion(PCLIENT_CTX client_ctx);
 
 #endif

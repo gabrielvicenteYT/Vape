@@ -1,16 +1,16 @@
 #include "forge.h"
 
-void SetupEventShit(PJVM_CTX ctx)
+void SetupForge(PFORGE_CTX forge_ctx, PCLIENT_CTX client_ctx)
 {
-    jint forgeVersion = GetForgeVersion(app_ctx);
+    jint forgeVersion = GetForgeMinorVersion(client_ctx);
 
-    if (forgeVersion > 13)
+     if (forgeVersion > 13)
     {
         if (forgeVersion < 26)
         {
             forge_ctx->clsEvent = GetClassByName(ctx, "net/minecraftforge/fml/common/eventhandler/Event");
-            forge_ctx->clsListenerList = GetClassByName(ctx, "net/minecraftforge/fml/common/eventhandler/ListenerList");
-            forge_ctx->clsListenerListInstance =
+            forge_ctx->clsListenerList = GetClassByName(ctx,
+            "net/minecraftforge/fml/common/eventhandler/ListenerList"); forge_ctx->clsListenerListInstance =
                 GetClassByName(ctx, "net/minecraftforge/fml/common/eventhandler/ListenerList$ListenerListInst");
             forge_ctx->clsEventPriority =
                 GetClassByName(ctx, "net/minecraftforge/fml/common/eventhandler/EventPriority");
@@ -49,7 +49,7 @@ void SetupEventShit(PJVM_CTX ctx)
                 "(ILnet/minecraftforge/eventbus/api/EventPriority;Lnet/minecraftforge/eventbus/api/IEventListener;)V");
         }
     }
-    else
+     else
     {
         forge_ctx->clsEvent = GetClassByName(ctx, "cpw/mods/fml/common/eventhandler/Event");
         forge_ctx->clsListenerList = GetClassByName(app_ctx, env, "cpw/mods/fml/common/eventhandler/ListenerList");
@@ -75,55 +75,68 @@ void SetupEventShit(PJVM_CTX ctx)
                                                 "Lcom/google/common/collect/ImmutableList;");
     }
 
-    forge_ctx->midBuildCache = GetMethodByName(app_ctx, env, forge_ctx->clsListenerListInstance, "buildCache", "()V");
+    forge_ctx->midBuildCache =
+        GetMethodByName(client_ctx->jvm, forge_ctx->clsListenerListInstance, "buildCache", "()V");
 }
 
-void DefineRegisterNative()
+jobject DefineForgeEventListener(PFORGE_CTX forge_ctx, jobject objClassLoader, void *unk1)
 {
-    JNIEnv *env;
+    jclass clsClassLoader = forge_ctx->env->FindClass("java/lang/ClassLoader");
+    jmethodID midDefineClass = forge_ctx->env->GetMethodID(clsClassLoader, "defineClass", "([BII)Ljava/lang/Class;");
 
-    jclass clsClassLoader = env->FindClass("java/lang/ClassLoader");
-    jmethodID midDefineClass = env->GetMethodID(clsClassLoader, "defineClass", "([BII)Ljava/lang/Class;");
+    jsize classLength = 0;
+    jbyte *classBytes = 0;
 
-    // TEMP...
-    typedef struct ctx_t
-    {
-        jobject objClassLoader;
-    };
-    ctx_t *ctx;
+    jbyteArray array = forge_ctx->env->NewByteArray(classLength);
+    forge_ctx->env->SetByteArrayRegion(array, 0, classLength, reinterpret_cast<jbyte *>(classBytes));
+    
+    jclass cls = (jclass)forge_ctx->env->CallObjectMethod(objClassLoader, midDefineClass, array);
+    jclass clsEventHandler = (jclass)forge_ctx->env->NewGlobalRef(cls);
 
-    jsize classLength;
-    jbyte *classBytes;
-
-    jbyteArray array = env->NewByteArray(classLength);
-    env->SetByteArrayRegion(array, 0, classLength, reinterpret_cast<jbyte *>(classBytes));
-    jclass cls = (jclass)env->CallObjectMethod(ctx->objClassLoader, midDefineClass, array);
-    jclass clsEventHandler = (jclass)env->NewGlobalRef(cls);
-    env->DeleteLocalRef(cls);
+    forge_ctx->env->DeleteLocalRef(cls);
 
     jbyte *cbuff = (jbyte *)malloc(classLength);
-    memset(cbuff, 0, classLength);
-    env->SetByteArrayRegion(array, 0, classLength, cbuff);
-    env->DeleteLocalRef(array);
+    memset(cbuff, NULL, classLength);
 
-    jmethodID midEventHandlerInit = GET_CONTSTRUCTOR(clsEventHandler);
+    forge_ctx->env->SetByteArrayRegion(array, 0, classLength, cbuff);
+    
+    forge_ctx->env->DeleteLocalRef(array);
+    free(cbuff);
 
-    auto reg = [clsEventHandler, midEventHandlerInit](JNIEnv *env, jclass cls_c, jclass cls, jint busId) {
-        jclass clsEvent = (jclass)env->NewGlobalRef(cls);
-        jobject objVapeListener = env->NewGlobalRef(env->NewObject(clsEventHandler, midEventHandlerInit));
+    // TODO: the code below is actually set elsewhere.
 
-        jmethodID midInit = GET_CONTSTRUCTOR(clsEvent);
+    //jmethodID midEventHandlerInit = forge_ctx->env->GetMethodID(clsEventHandler, "<init>", "()V");
 
-        jobject objEvent = env->NewGlobalRef(env->NewObject(clsEvent, midInit));
-        jobject objListenerList = env->CallObjectMethod(objEvent, forge_ctx->midGetListenerList);
-        jobject objEventPriority = env->GetStaticObjectField(forge_ctx->clsEventPriority, forge_ctx->fidEventPriority);
+    //auto reg = [clsEventHandler, midEventHandlerInit, forge_ctx](JNIEnv *env, jclass cls_c, jclass cls, jint busId) {
+    //    jclass clsEvent = (jclass)env->NewGlobalRef(cls);
+    //    jobject objVapeListener = env->NewGlobalRef(env->NewObject(clsEventHandler, midEventHandlerInit));
 
-        env->CallVoidMethod(objListenerList, forge_ctx->midRegister, busId, objEventPriority, objVapeListener);
+    //    jmethodID midInit = env->GetMethodID(clsEvent, "<init>", "()V");
 
-        // TODO: add to map to be unregistered when Vape exits.
-    };
+    //    jobject objEvent = env->NewGlobalRef(env->NewObject(clsEvent, midInit));
+    //    jobject objListenerList = env->CallObjectMethod(objEvent, forge_ctx->midGetListenerList);
+    //    jobject objEventPriority = env->GetStaticObjectField(forge_ctx->clsEventPriority, forge_ctx->fidEventPriority);
+
+    //    env->CallVoidMethod(objListenerList, forge_ctx->midRegister, busId, objEventPriority, objVapeListener);
+
+    //    // TODO: add to map to be unregistered when Vape exits.
+    //};
 }
 
-void UnregisterEventSubscriptions()
+void UnregisterForge(PFORGE_CTX forge_ctx)
 {
+    // g_jvmCtx->jni->UnregisterNatives();
+    // g_jvmCtx->jni->UnregisterNatives();
+}
+
+int GetForgeMinorVersion(PCLIENT_CTX client_ctx)
+{
+    int result = client_ctx->forgeMinorVersion;
+
+    if (!result)
+    {
+        // TODO: get and set the forge version
+        client_ctx->forgeMinorVersion = result;
+    }
+    return result;
 }

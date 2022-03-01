@@ -24,6 +24,8 @@
 
 #include "main.h"
 
+PCLIENT_CTX g_client_ctx;
+
 void Exit(JNIEnv *env, jclass caller, jboolean s)
 {
     // clean_and_disable_hooks();
@@ -37,9 +39,8 @@ void DCallback(JNIEnv *env, jclass caller)
 }
 
 /*-------------------------------------------------------
-    Resets a struct?
-
-    UNKNOWN
+    Tells the socket server (launcher) that we have sent
+    all of the contents needed.
 -------------------------------------------------------*/
 void FinishSending(JNIEnv *env, jclass caller)
 {
@@ -55,7 +56,7 @@ jclass GetClass(JNIEnv *env, jclass caller, jstring name)
 {
     const char *className = env->GetStringUTFChars(name, NULL);
 
-    // jclass cls = LookupMinecraftClass(app_ctx, env, className);
+    jclass cls = 0;
 
     env->ReleaseStringUTFChars(name, className);
 
@@ -98,16 +99,11 @@ jint GetKey(JNIEnv *env, jclass caller)
 
 jstring GetSettings(JNIEnv *env, jclass caller)
 {
-    jclass clsProfiles = env->FindClass("fake/Profiles");
-    jmethodID midGetSettings = env->GetStaticMethodID(clsProfiles, "getSettings", "()Ljava/lang/String;");
-    return (jstring)env->CallStaticObjectMethod(clsProfiles, midGetSettings);
+    return 0;
 }
 
 void SaveSettings(JNIEnv *env, jclass caller, jstring string)
 {
-    jclass clsProfiles = env->FindClass("fake/Profiles");
-    jmethodID midSendSettings = env->GetStaticMethodID(clsProfiles, "saveSettings", "(Ljava/lang/String;)V");
-    env->CallStaticVoidMethod(clsProfiles, midSendSettings, string);
 }
 
 void n_MessageBox(JNIEnv *env, jclass caller, jint code)
@@ -118,7 +114,7 @@ void n_MessageBox(JNIEnv *env, jclass caller, jint code)
 jclass GetClassJava(JNIEnv *env, jclass caller, jstring name)
 {
     const char *className = env->GetStringUTFChars(name, NULL);
-    // jclass cls = GetClassByName(app_ctx, env, className);
+    jclass cls = 0;
     env->ReleaseStringUTFChars(name, className);
     return cls;
 }
@@ -131,20 +127,21 @@ jstring GetClassSignature(JNIEnv *env, jclass caller, jclass cls)
     vm->GetEnv(reinterpret_cast<void **>(&jvmti_env), JVMTI_VERSION_1_1);
 
     char *classSignature;
-    char *classGeneric;
-    jvmti_env->GetClassSignature(cls, &classSignature, &classGeneric);
+    jvmti_env->GetClassSignature(cls, &classSignature, NULL);
 
-    jvmti_env->Deallocate((unsigned char *)classSignature);
-    jvmti_env->Deallocate((unsigned char *)classGeneric);
+    jstring result = NULL;
 
-    return env->NewStringUTF(classSignature);
+    if (classSignature)
+    {
+        result = env->NewStringUTF(classSignature);
+        jvmti_env->Deallocate((unsigned char *)classSignature);
+    }
+    return result;
 }
 
 jstring CopyString(JNIEnv *env, jclass caller, jint index)
 {
-    jclass clsResources = env->FindClass("fake/Resources");
-    jmethodID midGetString = env->GetStaticMethodID(clsResources, "getString", "(I)Ljava/lang/String;");
-    return (jstring)env->CallStaticObjectMethod(clsResources, midGetString, index);
+    return 0;
 }
 
 void Reload(JNIEnv *env, jclass caller)
@@ -156,13 +153,7 @@ void Reload(JNIEnv *env, jclass caller)
 -------------------------------------------------------*/
 jobject GetRenderHandler(JNIEnv *env, jclass caller)
 {
-    if (renderHandler == NULL)
-    {
-        jclass clsObject = env->FindClass("g");
-        jmethodID midInit = env->GetMethodID(clsObject, "<init>", "()V");
-        renderHandler = env->NewGlobalRef(env->NewObject(clsObject, midInit));
-    }
-    return renderHandler;
+    return 0;
 }
 
 /*-------------------------------------------------------
@@ -173,6 +164,7 @@ void ClipboardCopy(JNIEnv *env, jclass caller, jstring string)
     jint length = env->GetStringLength(string);
     char *buffer = new char[length];
     env->GetStringUTFRegion(string, 0, length, buffer);
+
     HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, length + 1);
     char *gl = reinterpret_cast<char *>(GlobalLock(hMem));
     memcpy(gl, buffer, length + 1);
@@ -201,9 +193,7 @@ void Print(JNIEnv *env, jclass caller, jstring string)
 jshort n_GetKeyState(JNIEnv *env, jclass caller, jint virtualKey)
 {
     if (FindWindowA("LWJGL", NULL) == GetForegroundWindow())
-    {
         return GetKeyState(virtualKey);
-    }
     return 0;
 }
 
@@ -291,76 +281,43 @@ jdoubleArray Translate(JNIEnv *env, jclass caller, jdouble x, jdouble y, jdouble
 -------------------------------------------------------*/
 jbyteArray GetClassBytes(JNIEnv *env, jclass caller, jclass cls)
 {
-    /*std::cout << "GetClassBytes called..." << std::endl;
+    jvmtiEnv *jvmti = g_client_ctx->jvm->jvmti;
+    if (!jvmti)
+        g_client_ctx->jvm->vm->GetEnv(reinterpret_cast<void **>(&jvmti), JVMTI_VERSION_1_2);
+    char *class_name;
+    jvmti->GetClassSignature(cls, &class_name, NULL);
 
-    JavaVM* vm;
-    jvmtiEnv* jvmti_env;
-    jvmtiError error;
-    jvmtiCapabilities capabilities;
-    jvmtiEventCallbacks callbacks;
-    env->GetJavaVM(&vm);
-    vm->GetEnv(reinterpret_cast<void**>(&jvmti_env), JVMTI_VERSION_1_1);
+    // is this really required?
+    memmove(target_class_name, class_name, strlen(class_name));
 
-    (void)memset(&capabilities, NULL, sizeof(capabilities));
+    capturing_class_bytes = true;
+
+    EnableClassFileLoadHook();
+
+    jvmtiError error = jvmti->RetransformClasses(1, new jclass[]{cls});
+
+    DisableClassFileLoadHook();
+
+    if (error)
+        return NULL;
+
+    jbyteArray arr;
+
+    if (true)
     {
-        capabilities.can_retransform_classes = 1;
+        arr = env->NewByteArray(class_file_hook_buffer_size);
+        env->SetByteArrayRegion(arr, 0, class_file_hook_buffer_size, reinterpret_cast<jbyte *>(class_file_hook_buffer));
+
+        memset(class_file_hook_buffer, NULL, class_file_hook_buffer_size);
+        free(class_file_hook_buffer);
     }
-    error = jvmti_env->AddCapabilities(&capabilities);
-
-    if (error != JVMTI_ERROR_NONE) {
-        std::cout << "Failed to add capabilities." << std::endl;
-    }
-
-    error = jvmti_env->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_CLASS_FILE_LOAD_HOOK, NULL);
-
-    if (error != JVMTI_ERROR_NONE) {
-        std::cout << "Failed to set event notification mode." << std::endl;
-    }
-
-    (void)memset(&callbacks, NULL, sizeof(callbacks));
+    else
     {
-        //callbacks.ClassFileLoadHook = &ClassFileLoadHook;
-        callbacks.ClassFileLoadHook = [](jvmtiEnv*, JNIEnv* jni_env, jclass, jobject, const char* name, jobject, jint
-    class_data_len, const unsigned char* class_data, jint*, unsigned char**)
-        {
-            if (lastName != NULL && !strcmp(lastName, name)) {
-                query_class = jni_env->NewByteArray(class_data_len);
-                jni_env->SetByteArrayRegion(query_class, 0, class_data_len, (jbyte*)class_data);
-                lastName = NULL;
-            }
-        };
-    }
-    error = jvmti_env->SetEventCallbacks(&callbacks, (jint)sizeof(callbacks));
-
-    if (error != JVMTI_ERROR_NONE) {
-        std::cout << "Failed to set callbacks." << std::endl;
+        arr = env->NewByteArray(v28);
+        env->SetByteArrayRegion(arr, 0, v28, v27);
     }
 
-    std::string internalName = GetInternalClassName(env, cls);
-
-    lastName = internalName.c_str();
-
-    jvmtiError err;
-
-    jclass loadedClasses[1] = { cls };
-    if (((err = jvmti_env->RetransformClasses(1, loadedClasses)) != JVMTI_ERROR_NONE)) {
-        char* err_str;
-        jvmti_env->GetErrorName(err, &err_str);
-        std::cout << "[ERROR] GetClassBytes failed: " << internalName << std::endl;
-        std::cout << "[ERROR] | Error Name: " << err_str << std::endl;
-    }
-
-    lastName = NULL;
-
-    return query_class;*/
-
-    JavaVM *vm;
-    jvmtiEnv *jvmti_env;
-    env->GetJavaVM(&vm);
-    vm->GetEnv(reinterpret_cast<void **>(&jvmti_env), JVMTI_VERSION_1_1);
-
-LABEL:
-    SetClassFileLoadHook(NULL);
+    return arr;
 }
 
 /*-------------------------------------------------------
@@ -372,15 +329,6 @@ LABEL:
 -------------------------------------------------------*/
 jint SetClassBytes(JNIEnv *env, jclass caller, jclass cls, jbyteArray bytes)
 {
-    // DllMain
-    SetClassFileLoadHook(NULL);
-
-    JavaVM *vm;
-    jvmtiEnv *jvmti_env;
-    env->GetJavaVM(&vm);
-    vm->GetEnv(reinterpret_cast<void **>(&jvmti_env), JVMTI_VERSION_1_1);
-
-    return jvmti_env->RetransformClasses(1, new jclass[]{cls});
 }
 
 /*-------------------------------------------------------
@@ -460,10 +408,6 @@ void DrawString0(const char *string, float *color, double x, double y)
     // texture_font_load_glyphs
 }
 
-// todo hook wglSwapBuffers, use freetype to draw font.
-/*-------------------------------------------------------
-    Sends a mouse down message.
--------------------------------------------------------*/
 jint DrawString(JNIEnv *env, jclass caller, jint id, jstring string, jdouble x, jdouble y, jint color)
 {
     const char *cString = env->GetStringUTFChars(string, NULL);
@@ -501,21 +445,14 @@ jint DrawString(JNIEnv *env, jclass caller, jint id, jstring string, jdouble x, 
     return 0;
 }
 
-/*-------------------------------------------------------
-    Sends a mouse down message.
--------------------------------------------------------*/
 jdouble GetStringWidth(JNIEnv *env, jclass caller, jint id, jstring string)
 {
-    // jclass clsResources = env->FindClass("fake/Fonts");
-    // jmethodID midGetStringWidth = env->GetStaticMethodID(clsResources, "getStringWidth", "(ILjava/lang/String;)D");
-    // return env->CallStaticDoubleMethod(clsResources, midGetStringWidth, id, string);
+    return 0;
 }
 
 jdouble GetStringHeight(JNIEnv *env, jclass caller, jint id, jstring string)
 {
-    // jclass clsResources = env->FindClass("fake/Fonts");
-    // jmethodID midGetStringHeight = env->GetStaticMethodID(clsResources, "getStringHeight", "(ILjava/lang/String;)D");
-    // return env->CallStaticDoubleMethod(clsResources, midGetStringHeight, id, string);
+    return 0;
 }
 
 void SendMouseDown(JNIEnv *env, jclass caller, jint wParam, jint msg)
@@ -529,10 +466,18 @@ void SendMouseDown(JNIEnv *env, jclass caller, jint wParam, jint msg)
 
 jstring GetProfile(JNIEnv *env, jclass caller, jstring id)
 {
-    jclass clsProfiles = env->FindClass("fake/Profiles");
-    jmethodID midGetSettings =
-        env->GetStaticMethodID(clsProfiles, "getProfile", "(Ljava/lang/String;)Ljava/lang/String;");
-    return (jstring)env->CallStaticObjectMethod(clsProfiles, midGetSettings, id);
+    const char *profileId = env->GetStringUTFChars(id, NULL);
+
+    // socket_send_packet(socket_ctx, 605);
+    // socket_send(socket_ctx, profileId);
+    // socket_send_packet(socket_ctx, 200);
+    // char *contents = socket_read(socket_ctx);
+
+    jstring profile = env->NewStringUTF("e30");
+
+    env->ReleaseStringUTFChars(id, profileId);
+
+    return profile;
 }
 
 // DLL -> Launcher RPC -> WebSocket
@@ -558,7 +503,7 @@ jboolean IsVanilla(JNIEnv *env, jclass caller)
 jclass GetVanillaClass(JNIEnv *env, jclass caller, jstring name)
 {
     const char *className = env->GetStringUTFChars(name, NULL);
-    jclass cls = LookupMinecraftClass(app_ctx, env, className);
+    jclass cls = NULL;
     env->ReleaseStringUTFChars(name, className);
     return cls;
 }
@@ -572,9 +517,9 @@ jint GetMinorVersion(JNIEnv *env, jclass caller)
 }
 
 /*-------------------------------------------------------
-    UNKNOWN
+    Tells the socket to recieve contents
 -------------------------------------------------------*/
-void ResetSocketC(JNIEnv *env, jclass caller)
+void RecieveSocketContents(JNIEnv *env, jclass caller)
 {
 }
 
@@ -607,10 +552,6 @@ jint MakeFont(JNIEnv *env, jclass caller, jint id, jint size, jstring name)
 -------------------------------------------------------*/
 void UpdateDiscord(JNIEnv *env, jclass caller, jstring title, jstring subtitle)
 {
-    jclass clsDiscord = env->FindClass("fake/Discord");
-    jmethodID midUpdateDiscord =
-        env->GetStaticMethodID(clsDiscord, "updateDiscord", "(Ljava/lang/String;Ljava/lang/String;)V");
-    env->CallStaticVoidMethod(clsDiscord, midUpdateDiscord, title, subtitle);
 }
 
 /*-------------------------------------------------------
@@ -689,7 +630,7 @@ void RenderState(JNIEnv *env, jclass caller, jint state, jdouble displayWidth, j
     // list initializer in virtualized section
     // glCallList(list);
 
-    //glGenLists()
+    // glGenLists()
 
     glPopMatrix();
     glMatrixMode(GL_PROJECTION);
@@ -735,7 +676,7 @@ void RegisterMainNatives(JNIEnv *env, jclass cls)
         DEFINE_NATIVE_METHOD("iv", "()Z", IsVanilla),
         DEFINE_NATIVE_METHOD("gvc", "(Ljava/lang/String;)Ljava/lang/Class;", GetVanillaClass),
         DEFINE_NATIVE_METHOD("gmv", "()I", GetMinorVersion),
-        DEFINE_NATIVE_METHOD("rsc", "()V", ResetSocketC),
+        DEFINE_NATIVE_METHOD("rsc", "()V", RecieveSocketContents),
         DEFINE_NATIVE_METHOD("mf", "(IILjava/lang/String;)I", MakeFont),
         DEFINE_NATIVE_METHOD("updc", "(Ljava/lang/String;Ljava/lang/String;)V", UpdateDiscord),
         DEFINE_NATIVE_METHOD("dsv2", "(ILjava/lang/String;DDIF)I", DrawStringV2),

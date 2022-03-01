@@ -36,8 +36,6 @@
         const_cast<char *>(name), const_cast<char *>(signature), (void *)fn                                            \
     }
 
-#define GET_CONTSTRUCTOR(cls) env->GetMethodID(cls, "<init>", "()V")
-
 typedef struct JVM_CTX
 {
     JavaVM *vm;
@@ -48,7 +46,21 @@ typedef struct JVM_CTX
 typedef struct CLIENT_CTX
 {
     PJVM_CTX jvm;
+    PFORGE_CTX forge;
+    bool isVanilla;
+    int forgeMinorVersion;
 } * PCLIENT_CTX;
+
+// todo actual globalization xd.
+
+extern jbyteArray class_bytes;
+extern char *target_class_name;
+extern bool capturing_class_bytes;
+
+extern int class_file_hook_buffer_size;
+extern unsigned char *class_file_hook_buffer;
+
+extern PJVM_CTX g_jvmCtx;
 
 PJVM_CTX GetJVMContext();
 

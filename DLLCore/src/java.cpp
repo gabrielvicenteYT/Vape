@@ -24,169 +24,211 @@
 
 #include "java.h"
 
-PJVM_CTX g_jvmCtx;
-
 // todo use g_jvmCtx and initialize ctx lmfao.
-PJVM_CTX
-GetJVMContext()
+PJVM_CTX GetJVMContext()
 {
-	PJVM_CTX ctx = new JVM_CTX();
+    PJVM_CTX ctx = new JVM_CTX();
 
-	jint vms = 0;
+    jint cVMs = 0;
 
-	if (!ctx->vm)
-		vms = JNI_GetCreatedJavaVMs(&ctx->vm, 1, NULL);
+    if (!ctx->vm)
+    {
+        cVMs = JNI_GetCreatedJavaVMs(&ctx->vm, 1, NULL);
+    }
 
-	if (vms && !ctx->vm)
-		return NULL;
+    if (cVMs && !ctx->vm)
+    {
+        return NULL;
+    }
 
-	g_jvmCtx = ctx;
+    g_jvmCtx = ctx;
 
-	JavaVMAttachArgs args{};
+    JavaVMAttachArgs args = {sizeof(JavaVMAttachArgs)};
 
-	args.version = JNI_VERSION_1_8;
-	args.name = NULL;
-	args.group = NULL;
+    args.version = JNI_VERSION_1_8;
+    args.name = NULL;
+    args.group = NULL;
 
-	ctx->vm->AttachCurrentThread(reinterpret_cast<void**>(&ctx->jni), &args);
+    ctx->vm->AttachCurrentThread(reinterpret_cast<void **>(&ctx->jni), &args);
 
-	return ctx;
+    return ctx;
 }
 
-jfieldID
-GetFieldByName(PJVM_CTX ctx, jclass cls, const char* name, const char* signature)
+jfieldID GetFieldByName(PJVM_CTX ctx, jclass cls, const char *name, const char *signature)
 {
 
-	jfieldID returnField = NULL;
+    jfieldID returnField = NULL;
 
-	if (ctx->jvmti) 
-	{
-		ctx->vm->GetEnv(reinterpret_cast<void**>(&ctx->jvmti), JVMTI_VERSION_1_1);
+    if (ctx->jvmti)
+    {
+        ctx->vm->GetEnv(reinterpret_cast<void **>(&ctx->jvmti), JVMTI_VERSION_1_1);
 
-		jint count;
-		jfieldID* fields;
+        jint count;
+        jfieldID *fields;
 
-		ctx->jvmti->GetClassFields(cls, &count, &fields);
+        ctx->jvmti->GetClassFields(cls, &count, &fields);
 
-		if (count > 0)
-		{
-			for (jint index = 0; index < count; index++)
-			{
+        if (count > 0)
+        {
+            for (jint index = 0; index < count; index++)
+            {
 
-				char* fieldName;
-				char* fieldSignature;
+                char *fieldName;
+                char *fieldSignature;
 
-				jfieldID fieldID = fields[index];
+                jfieldID fieldID = fields[index];
 
-				ctx->jvmti->GetFieldName(cls, fieldID, &fieldName, &fieldSignature, NULL);
+                ctx->jvmti->GetFieldName(cls, fieldID, &fieldName, &fieldSignature, NULL);
 
-				if (fieldSignature && fieldName)
-				{
-					// does the field match the name and/or signature?
-					if (!strstr(fieldName, name) && (!fieldSignature || strstr(fieldSignature, signature)))
-						returnField = fieldID;
+                if (fieldSignature && fieldName)
+                {
+                    // does the field match the name and/or signature?
+                    if (!strstr(fieldName, name) && (!fieldSignature || strstr(fieldSignature, signature)))
+                    {
+                        returnField = fieldID;
+                    }
 
-					ctx->jvmti->Deallocate((unsigned char*)fieldName);
-					ctx->jvmti->Deallocate((unsigned char*)fieldSignature);
-				}
-			}
-		}
+                    ctx->jvmti->Deallocate((unsigned char *)fieldName);
+                    ctx->jvmti->Deallocate((unsigned char *)fieldSignature);
+                }
+            }
+        }
 
-		// if we can't find the field, use JNI as a last resort.
-		if (!returnField && !(returnField = ctx->jni->GetFieldID(cls, name, signature)))
-			returnField = ctx->jni->GetStaticFieldID(cls, name, signature);
+        if (!returnField && !(returnField = ctx->jni->GetFieldID(cls, name, signature)))
+        {
+            returnField = ctx->jni->GetStaticFieldID(cls, name, signature);
+        }
 
-		ctx->jvmti->Deallocate((unsigned char*)fields);
-	}
-	else {
-		if (!(returnField = ctx->jni->GetFieldID(cls, name, signature)))
-			returnField = ctx->jni->GetStaticFieldID(cls, name, signature);
-	}
+        ctx->jvmti->Deallocate((unsigned char *)fields);
+    }
+    else
+    {
+        if (!(returnField = ctx->jni->GetFieldID(cls, name, signature)))
+        {
+            returnField = ctx->jni->GetStaticFieldID(cls, name, signature);
+        }
+    }
 
-	return returnField;
+    return returnField;
 }
 
-jmethodID
-GetMethodByName(PJVM_CTX ctx, jclass cls, const char* name, const char* signature)
+jmethodID GetMethodByName(PJVM_CTX ctx, jclass cls, const char *name, const char *signature)
 {
-	jmethodID returnMethod = NULL;
+    jmethodID returnMethod = NULL;
 
-	if (ctx->jvmti)
-	{
-		ctx->vm->GetEnv(reinterpret_cast<void**>(&ctx->jvmti), JVMTI_VERSION_1_1);
+    if (ctx->jvmti)
+    {
+        ctx->vm->GetEnv(reinterpret_cast<void **>(&ctx->jvmti), JVMTI_VERSION_1_1);
 
-		jint count;
-		jmethodID* methods;
+        jint count;
+        jmethodID *methods;
 
-		ctx->jvmti->GetClassMethods(cls, &count, &methods);
+        ctx->jvmti->GetClassMethods(cls, &count, &methods);
 
-		if (count > 0)
-		{
-			for (jint index = 0; index < count; index++)
-			{
+        if (count > 0)
+        {
+            for (jint index = 0; index < count; index++)
+            {
 
-				char* methodName;
-				char* methodSignature;
+                char *methodName;
+                char *methodSignature;
 
-				jmethodID methodID = methods[index];
+                jmethodID methodID = methods[index];
 
-				ctx->jvmti->GetMethodName(methodID, &methodName, &methodSignature, NULL);
+                ctx->jvmti->GetMethodName(methodID, &methodName, &methodSignature, NULL);
 
-				if (methodName && methodSignature) 
-				{
-					// does the method match the name and signature?
-					if (!strstr(methodName, name) && !strstr(methodSignature, signature))
-						returnMethod = methodID;
+                if (methodName && methodSignature)
+                {
+                    // does the method match the name and signature?
+                    if (!strstr(methodName, name) && !strstr(methodSignature, signature))
+                    {
+                        returnMethod = methodID;
+                    }
 
-					ctx->jvmti->Deallocate((unsigned char*)methodName);
-					ctx->jvmti->Deallocate((unsigned char*)methodSignature);
-				}
-			}
-		}
+                    ctx->jvmti->Deallocate((unsigned char *)methodName);
+                    ctx->jvmti->Deallocate((unsigned char *)methodSignature);
+                }
+            }
+        }
 
-		ctx->jvmti->Deallocate((unsigned char*)methods);
+        ctx->jvmti->Deallocate((unsigned char *)methods);
 
-		// if we can't find the method, use JNI as a last resort.
-		if (!returnMethod && !(returnMethod = ctx->jni->GetMethodID(cls, name, signature)))
-			returnMethod = ctx->jni->GetStaticMethodID(cls, name, signature);
-	}
-	else
-	{
-		if (!(returnMethod = ctx->jni->GetMethodID(cls, name, signature)))
-			returnMethod = ctx->jni->GetStaticMethodID(cls, name, signature);
-	}
+        if (!returnMethod && !(returnMethod = ctx->jni->GetMethodID(cls, name, signature)))
+        {
+            returnMethod = ctx->jni->GetStaticMethodID(cls, name, signature);
+        }
+    }
+    else
+    {
+        if (!(returnMethod = ctx->jni->GetMethodID(cls, name, signature)))
+        {
+            returnMethod = ctx->jni->GetStaticMethodID(cls, name, signature);
+        }
+    }
 
-	return returnMethod;
+    return returnMethod;
 }
 
-jvmtiError
-EnableClassFileLoadHook() 
+void ClassFileLoadHook()
 {
-	PJVM_CTX ctx = GetJVMContext();
-
-	if (!ctx->jvmti)
-		ctx->vm->GetEnv(reinterpret_cast<void**>(&ctx->jvmti), JVMTI_VERSION_1_1);
-
-	jvmtiCapabilities caps;
-	caps.can_generate_all_class_hook_events = 1;
-
-	ctx->jvmti->AddCapabilities(&caps);
-
-	return ctx->jvmti->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_CLASS_FILE_LOAD_HOOK, NULL);
 }
 
-jvmtiError
-DisableClassFileLoadHook()
+jvmtiError EnableClassFileLoadHook()
 {
-	PJVM_CTX ctx = GetJVMContext();
+    PJVM_CTX ctx = GetJVMContext();
 
-	if (!ctx->jvmti)
-		ctx->vm->GetEnv(reinterpret_cast<void**>(&ctx->jvmti), JVMTI_VERSION_1_1);
+    if (!ctx->jvmti)
+    {
+        ctx->vm->GetEnv(reinterpret_cast<void **>(&ctx->jvmti), JVMTI_VERSION_1_1);
+    }
 
-	jvmtiEventCallbacks callbacks{};
-	callbacks.ClassFileLoadHook = NULL;
+    jvmtiCapabilities caps;
+    caps.can_generate_all_class_hook_events = 1;
 
-	ctx->jvmti->SetEventCallbacks(&callbacks, sizeof(jvmtiEventCallbacks));
+    jvmtiEventCallbacks callbacks;
 
-	return ctx->jvmti->SetEventNotificationMode(JVMTI_DISABLE, JVMTI_EVENT_CLASS_FILE_LOAD_HOOK, NULL);
+    callbacks.ClassFileLoadHook = [](jvmtiEnv *jvmti_env, JNIEnv *, jclass, jobject, const char *name, jobject,
+                                     jint class_data_len, const unsigned char *class_data, jint *new_class_data_len,
+                                     unsigned char **new_class_data) {
+        if (name && strstr(target_class_name, name))
+        {
+            if (capturing_class_bytes)
+            {
+                class_file_hook_buffer_size = class_data_len;
+                class_file_hook_buffer = new unsigned char[class_data_len];
+                memmove(class_file_hook_buffer, class_data, class_file_hook_buffer_size);
+            }
+            else
+            {
+                unsigned char *allocated = new unsigned char[0];
+                jvmti_env->Allocate(class_file_hook_buffer_size, &allocated);
+                memmove(allocated, class_file_hook_buffer, class_file_hook_buffer_size);
+                *new_class_data_len = class_file_hook_buffer_size;
+                *new_class_data = allocated;
+            }
+        }
+    };
+
+    ctx->jvmti->SetEventCallbacks(&callbacks, sizeof(callbacks));
+
+    ctx->jvmti->AddCapabilities(&caps);
+
+    return ctx->jvmti->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_CLASS_FILE_LOAD_HOOK, NULL);
+}
+
+jvmtiError DisableClassFileLoadHook()
+{
+    PJVM_CTX ctx = GetJVMContext();
+
+    if (!ctx->jvmti)
+    {
+        ctx->vm->GetEnv(reinterpret_cast<void **>(&ctx->jvmti), JVMTI_VERSION_1_1);
+    }
+
+    jvmtiEventCallbacks callbacks{};
+    callbacks.ClassFileLoadHook = NULL;
+
+    ctx->jvmti->SetEventCallbacks(&callbacks, sizeof(jvmtiEventCallbacks));
+
+    return ctx->jvmti->SetEventNotificationMode(JVMTI_DISABLE, JVMTI_EVENT_CLASS_FILE_LOAD_HOOK, NULL);
 }
